@@ -3,6 +3,7 @@ import {
   collection,
   onSnapshot,
   addDoc,
+  updateDoc,
   deleteDoc,
   doc,
   orderBy,
@@ -11,7 +12,7 @@ import {
 import { db, ensureAuth } from "../firebase";
 
 // Hook générique pour lire/écrire une collection Firestore en temps réel.
-// Chaque module (produits, achats, ventes) l'utilise avec son propre nom de collection.
+// Chaque module (produits, achats, ventes, commandes) l'utilise avec son propre nom de collection.
 export function useCollection(name, orderField = "date") {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,9 +33,13 @@ export function useCollection(name, orderField = "date") {
     await addDoc(collection(db, name), { ...data, createdAt: Date.now() });
   }
 
+  async function update(id, data) {
+    await updateDoc(doc(db, name, id), data);
+  }
+
   async function remove(id) {
     await deleteDoc(doc(db, name, id));
   }
 
-  return { rows, add, remove, loading };
+  return { rows, add, update, remove, loading };
 }
