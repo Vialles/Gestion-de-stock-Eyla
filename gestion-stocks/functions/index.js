@@ -1,24 +1,15 @@
 /**
- * Cloud Functions - intégration SumUp
+ * Cloud Functions du projet gestion-stocks
  * -------------------------------------------------------------
- * Ces fonctions vivent côté serveur car SUMUP_CLIENT_SECRET ne doit
- * jamais être exposé dans le code client (voir .env.example).
+ * 1. Intégration SumUp (OAuth, catalogue, webhook ventes)
+ * 2. Sauvegarde automatique hebdomadaire de toutes les données Firestore
  *
- * Config attendue (firebase functions:config:set ou .env en v2) :
+ * Config attendue (secrets, voir README) :
  *   SUMUP_CLIENT_ID, SUMUP_CLIENT_SECRET, SUMUP_REDIRECT_URI
- *
- * Flux :
- *  1. sumupAuthUrl        -> génère l'URL d'autorisation OAuth SumUp
- *  2. sumupAuthCallback   -> échange le code contre un access/refresh token,
- *                            stocké dans Firestore (collection "integrations/sumup")
- *  3. syncSumupCatalog    -> récupère le catalogue produits SumUp et
- *                            met à jour la collection "produits"
- *  4. sumupWebhook        -> reçoit les notifications de vente SumUp et
- *                            ajoute une ligne dans "ventes" (source: "sumup"),
- *                            puis décrémente le stock du produit correspondant
  */
 
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
@@ -31,6 +22,10 @@ const SUMUP_CLIENT_SECRET = defineSecret("SUMUP_CLIENT_SECRET");
 const SUMUP_REDIRECT_URI = defineSecret("SUMUP_REDIRECT_URI");
 
 const SUMUP_AUTH_BASE = "https://api.sumup.com";
+
+// ============================================================
+// SumUp
+// ============================================================
 
 // 1. URL d'autorisation à ouvrir côté client pour connecter le compte SumUp
 exports.sumupAuthUrl = onRequest(
@@ -75,7 +70,6 @@ exports.sumupAuthCallback = onRequest(
   }
 );
 
-// Rafraîchit le token si besoin
 async function getValidAccessToken() {
   const ref = db.collection("integrations").doc("sumup");
   const snap = await ref.get();
@@ -101,7 +95,6 @@ async function getValidAccessToken() {
 }
 
 // 3. Synchronise le catalogue produits SumUp -> Firestore "produits"
-// À appeler manuellement (bouton "Synchroniser" côté app) ou via un scheduler.
 exports.syncSumupCatalog = onRequest(
   { secrets: [SUMUP_CLIENT_ID, SUMUP_CLIENT_SECRET] },
   async (req, res) => {
@@ -133,7 +126,6 @@ exports.syncSumupCatalog = onRequest(
 );
 
 // 4. Webhook SumUp : appelé par SumUp à chaque transaction.
-// Configurer l'URL de cette fonction dans le dashboard développeur SumUp.
 exports.sumupWebhook = onRequest(async (req, res) => {
   try {
     const event = req.body;
@@ -147,11 +139,11 @@ exports.sumupWebhook = onRequest(async (req, res) => {
         quantite: tx.quantity || 1,
         client: tx.customer_name || "",
         montant: tx.amount,
+        moyenPaiement: "SumUp",
         source: "sumup",
         createdAt: Date.now(),
       });
 
-      // Décrémente le stock du produit correspondant, si trouvé par référence
       const prodSnap = await db.collection("produits")
         .where("reference", "==", tx.product_tracking_id)
         .limit(1)
@@ -168,5 +160,56 @@ exports.sumupWebhook = onRequest(async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send("error");
+  }
+});
+
+// ============================================================
+// Sauvegarde automatique hebdomadaire
+// ============================================================
+
+const BACKUP_COLLECTIONS = ["produits", "achats", "ventes", "commandes"];
+const KEEP_LAST_N_BACKUPS = 8; // ~2 mois d'historique à raison d'une sauvegarde par semaine
+
+async function runBackup() {
+  const backup = { createdAt: new Date().toISOString(), collections: {} };
+
+  for (const name of BACKUP_COLLECTIONS) {
+    const snap = await db.collection(name).get();
+    backup.collections[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+
+  const fileName = `backups/backup-${backup.createdAt.slice(0, 10)}.json`;
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(fileName);
+  await file.save(JSON.stringify(backup, null, 2), {
+    contentType: "application/json",
+  });
+
+  // Nettoyage : ne garde que les N sauvegardes les plus récentes
+  const [files] = await bucket.getFiles({ prefix: "backups/backup-" });
+  const sorted = files.sort((a, b) => (a.name < b.name ? 1 : -1)); // plus récent en premier
+  const toDelete = sorted.slice(KEEP_LAST_N_BACKUPS);
+  await Promise.all(toDelete.map((f) => f.delete().catch(() => {})));
+
+  return fileName;
+}
+
+// Sauvegarde automatique tous les lundis à 3h (heure de Paris)
+exports.scheduledBackup = onSchedule(
+  { schedule: "every monday 03:00", timeZone: "Europe/Paris" },
+  async () => {
+    const fileName = await runBackup();
+    console.log(`Sauvegarde créée : ${fileName}`);
+  }
+);
+
+// Permet aussi de déclencher une sauvegarde manuellement depuis l'appli (bouton "Sauvegarder")
+exports.manualBackup = onRequest(async (req, res) => {
+  try {
+    const fileName = await runBackup();
+    res.json({ ok: true, file: fileName });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "Échec de la sauvegarde" });
   }
 });
