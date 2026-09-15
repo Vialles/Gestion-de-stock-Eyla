@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Package, ShoppingBag, Receipt, ClipboardList, Download, Save, Upload, Loader2, MoreVertical } from "lucide-react";
+import { Package, ShoppingBag, Receipt, ClipboardList, Store, Download, Save, Upload, Loader2, MoreVertical } from "lucide-react";
 import { exportToExcel } from "../lib/exportExcel";
 import { exportBackupJSON, restoreBackupJSON } from "../lib/backup";
 
@@ -8,6 +8,7 @@ const TABS = [
   { id: "produits", label: "Produits", icon: Package },
   { id: "ventes", label: "Ventes", icon: Receipt },
   { id: "commandes", label: "Commandes", icon: ClipboardList },
+  { id: "magasins", label: "Magasins", icon: Store },
 ];
 
 export default function Header({ tab, setTab }) {
