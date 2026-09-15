@@ -167,7 +167,7 @@ exports.sumupWebhook = onRequest(async (req, res) => {
 // Sauvegarde automatique hebdomadaire
 // ============================================================
 
-const BACKUP_COLLECTIONS = ["produits", "achats", "ventes", "commandes"];
+const BACKUP_COLLECTIONS = ["produits", "achats", "ventes", "commandes", "magasins", "stocksMagasins"];
 const KEEP_LAST_N_BACKUPS = 8; // ~2 mois d'historique à raison d'une sauvegarde par semaine
 
 async function runBackup() {
