@@ -4,6 +4,7 @@ import ProduitsTab from "./components/ProduitsTab";
 import AchatsTab from "./components/AchatsTab";
 import VentesTab from "./components/VentesTab";
 import CommandesTab from "./components/CommandesTab";
+import MagasinsTab from "./components/MagasinsTab";
 
 export default function App() {
   const [tab, setTab] = useState("achats");
@@ -16,6 +17,7 @@ export default function App() {
         {tab === "produits" && <ProduitsTab />}
         {tab === "ventes" && <VentesTab />}
         {tab === "commandes" && <CommandesTab />}
+        {tab === "magasins" && <MagasinsTab />}
       </main>
     </div>
   );
