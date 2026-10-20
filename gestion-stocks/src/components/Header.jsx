@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { Package, ShoppingBag, Receipt, ClipboardList, Store, Download, Save, Upload, Loader2, MoreVertical } from "lucide-react";
+import { Package, ShoppingBag, Receipt, ClipboardList, Store, Download, Users, Save, Upload, Loader2, MoreVertical } from "lucide-react";
 import { exportToExcel } from "../lib/exportExcel";
+import { exportClientsToExcel } from "../lib/exportClients";
 import { exportBackupJSON, restoreBackupJSON } from "../lib/backup";
 
 const TABS = [
@@ -12,34 +13,29 @@ const TABS = [
 ];
 
 export default function Header({ tab, setTab }) {
-  const [busy, setBusy] = useState(null); // "export" | "backup" | "restore" | null
+  const [busy, setBusy] = useState(null); // "export" | "clients" | "backup" | "restore" | null
   const [menuOpen, setMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
 
-  async function handleExport() {
-    setBusy("export");
+  async function run(kind, fn, errorMsg) {
+    setBusy(kind);
     try {
-      await exportToExcel();
+      return await fn();
     } catch (err) {
       console.error(err);
-      alert("Échec de l'export Excel, réessaie dans un instant.");
+      alert(errorMsg);
     } finally {
       setBusy(null);
       setMenuOpen(false);
     }
   }
 
-  async function handleBackup() {
-    setBusy("backup");
-    try {
-      await exportBackupJSON();
-    } catch (err) {
-      console.error(err);
-      alert("Échec de la sauvegarde, réessaie dans un instant.");
-    } finally {
-      setBusy(null);
-      setMenuOpen(false);
-    }
+  const handleExport = () => run("export", exportToExcel, "Échec de l'export Excel, réessaie dans un instant.");
+  const handleBackup = () => run("backup", exportBackupJSON, "Échec de la sauvegarde, réessaie dans un instant.");
+
+  async function handleClients() {
+    const count = await run("clients", exportClientsToExcel, "Échec de l'export des clients, réessaie dans un instant.");
+    if (count === 0) alert("Aucun client à exporter : renseigne les coordonnées client dans l'onglet Commandes.");
   }
 
   function handleRestoreClick() {
@@ -55,19 +51,14 @@ export default function Header({ tab, setTab }) {
       return;
     }
 
-    setBusy("restore");
-    try {
-      const result = await restoreBackupJSON(file);
+    const result = await run("restore", () => restoreBackupJSON(file), "Échec de la restauration — vérifie que le fichier est bien une sauvegarde générée par l'appli.");
+    if (result) {
       const detail = Object.entries(result.counts).map(([k, v]) => `${k} : ${v}`).join(", ");
       alert(`Sauvegarde du ${result.createdAt.slice(0, 10)} restaurée.\n${detail}`);
-    } catch (err) {
-      console.error(err);
-      alert("Échec de la restauration — vérifie que le fichier est bien une sauvegarde générée par l'appli.");
-    } finally {
-      setBusy(null);
-      setMenuOpen(false);
     }
   }
+
+  const labels = { export: "Export...", clients: "Export clients...", backup: "Sauvegarde...", restore: "Restauration..." };
 
   return (
     <header className="border-b sticky top-0 z-10 bg-[#fbf6f1ee] backdrop-blur border-[#eee0d8]">
@@ -105,15 +96,16 @@ export default function Header({ tab, setTab }) {
               className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium border border-rouille text-rouille hover:bg-rouille hover:text-white transition disabled:opacity-50"
             >
               {busy ? <Loader2 size={15} className="animate-spin" /> : <MoreVertical size={15} />}
-              <span className="hidden sm:inline">
-                {busy === "export" ? "Export..." : busy === "backup" ? "Sauvegarde..." : busy === "restore" ? "Restauration..." : "Options"}
-              </span>
+              <span className="hidden sm:inline">{busy ? labels[busy] : "Options"}</span>
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 mt-1 w-56 rounded-md border border-[#eee0d8] bg-white shadow-lg overflow-hidden z-20">
+              <div className="absolute right-0 mt-1 w-60 rounded-md border border-[#eee0d8] bg-white shadow-lg overflow-hidden z-20">
                 <button onClick={handleExport} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#3a2318] hover:bg-[#fdf8f5] transition">
                   <Download size={15} /> Exporter en Excel
+                </button>
+                <button onClick={handleClients} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#3a2318] hover:bg-[#fdf8f5] transition border-t border-[#f2e6df]">
+                  <Users size={15} /> Exporter les clients (Excel)
                 </button>
                 <button onClick={handleBackup} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#3a2318] hover:bg-[#fdf8f5] transition border-t border-[#f2e6df]">
                   <Save size={15} /> Sauvegarder les données
