@@ -1,14 +1,18 @@
 import { collection, getDocs } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { db, ensureAuth } from "../firebase";
+import { stockMagasin, totauxParReference, stockAtelier, aFabriquer, TYPE_LABELS } from "./stock";
 
 async function fetchAll(name) {
   const snap = await getDocs(collection(db, name));
-  return snap.docs.map((d) => d.data());
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-function formatProduits(rows) {
-  return rows.map((r) => ({
+const n = (v) => Number(v) || 0;
+
+function formatProduits(produits, mouvements) {
+  const { atelierDelta, enMagasin, venduMagasin } = totauxParReference(mouvements);
+  return produits.map((r) => ({
     "Date fabrication": r.date || "",
     "Produit": r.produit || "",
     "Catégorie": r.categorie || "",
@@ -16,11 +20,15 @@ function formatProduits(rows) {
     "Dimension": r.dimension || "",
     "Poids": r.poids || "",
     "Temps de fabrication": r.tempsFabrication || "",
-    "Coût matière": Number(r.coutMatiere) || 0,
-    "Prix de vente": Number(r.prixVente) || 0,
-    "Stock initial": Number(r.stockInitial) || 0,
-    "Ventes": Number(r.ventes) || 0,
-    "Stock restant": (Number(r.stockInitial) || 0) - (Number(r.ventes) || 0),
+    "Coût matière": n(r.coutMatiere),
+    "Prix de vente": n(r.prixVente),
+    "Stock initial": n(r.stockInitial),
+    "Stock cible": n(r.stockCible),
+    "Ventes directes": n(r.ventes),
+    "Vendu en magasin": venduMagasin[r.reference] || 0,
+    "Stock atelier": stockAtelier(r, atelierDelta),
+    "En magasin": enMagasin[r.reference] || 0,
+    "À fabriquer": aFabriquer(r, atelierDelta, enMagasin),
   }));
 }
 
@@ -30,23 +38,42 @@ function formatAchats(rows) {
     "Fournisseur": r.fournisseur || "",
     "Catégorie": r.categorie || "",
     "Identification": r.identification || "",
-    "Prix unitaire HT": Number(r.prixUnitaire) || 0,
-    "Quantité": Number(r.quantite) || 0,
-    "PA total": (Number(r.prixUnitaire) || 0) * (Number(r.quantite) || 0),
-    "Pièces fabriquées": Number(r.piecesFab1) || 0,
+    "Prix unitaire HT": n(r.prixUnitaire),
+    "Quantité": n(r.quantite),
+    "PA total": n(r.prixUnitaire) * n(r.quantite),
+    "Pièces fabriquées": n(r.piecesFab1),
   }));
 }
 
-function formatVentes(rows) {
-  return rows.map((r) => ({
+// Ventes directes + ventes en magasin
+function formatVentes(ventes, mouvements, magasins) {
+  const directes = ventes.map((r) => ({
     "Date": r.date || "",
     "Référence": r.reference || "",
-    "Quantité": Number(r.quantite) || 0,
+    "Quantité": n(r.quantite),
     "Client": r.client || "",
-    "Montant": Number(r.montant) || 0,
+    "Montant": n(r.montant),
+    "Net après commission": "",
     "Moyen de paiement": r.moyenPaiement || "",
+    "Lieu de vente": "Direct",
     "Source": r.source === "sumup" ? "SumUp" : "Manuel",
   }));
+  const enMagasin = mouvements.filter((m) => m.type === "vente").map((m) => {
+    const magasin = magasins.find((x) => x.id === m.magasinId);
+    const montant = n(m.montant);
+    return {
+      "Date": m.date || "",
+      "Référence": m.reference || "",
+      "Quantité": n(m.quantite),
+      "Client": "",
+      "Montant": montant,
+      "Net après commission": montant - (montant * n(magasin?.commission)) / 100,
+      "Moyen de paiement": "",
+      "Lieu de vente": m.magasinNom || magasin?.nom || "",
+      "Source": "Magasin",
+    };
+  });
+  return [...directes, ...enMagasin].sort((a, b) => String(a["Date"]).localeCompare(String(b["Date"])));
 }
 
 function formatCommandes(rows) {
@@ -57,65 +84,70 @@ function formatCommandes(rows) {
     "Téléphone": r.clientTelephone || "",
     "Email": r.clientEmail || "",
     "Temps de réalisation": r.tempsRealisation || "",
-    "Coût matière": Number(r.coutMatiere) || 0,
-    "Prix de vente": Number(r.prixVente) || 0,
+    "Coût matière": n(r.coutMatiere),
+    "Prix de vente": n(r.prixVente),
     "Début": r.dateDebut || "",
     "Livraison prévue": r.dateFin || "",
     "Statut": r.statut || "",
   }));
 }
 
-function formatMagasins(magasins, stocks) {
-  return stocks.map((s) => {
-    const magasin = magasins.find((m) => m.id === s.magasinId) || {};
-    return {
-      "Magasin": magasin.nom || "",
-      "Adresse": magasin.adresse || "",
-      "Téléphone": magasin.telephone || "",
-      "Contact": magasin.contact || "",
-      "Référence produit": s.reference || "",
-      "Produit": s.produit || "",
-      "Quantité en stock": Number(s.quantite) || 0,
-    };
-  });
+// Stock actuel de chaque magasin
+function formatStockMagasins(magasins, mouvements) {
+  return magasins.flatMap((m) =>
+    Object.values(stockMagasin(mouvements, m.id))
+      .filter((s) => s.quantite !== 0)
+      .map((s) => ({
+        "Magasin": m.nom || "",
+        "Adresse": m.adresse || "",
+        "Téléphone": m.telephone || "",
+        "Contact": m.contact || "",
+        "Commission (%)": n(m.commission),
+        "Référence produit": s.reference,
+        "Produit": s.produit,
+        "Quantité en stock": s.quantite,
+      }))
+  );
 }
 
-function autoWidth(sheet, rows) {
-  if (!rows.length) return;
-  const keys = Object.keys(rows[0]);
-  sheet["!cols"] = keys.map((k) => ({
-    wch: Math.max(k.length, ...rows.map((r) => String(r[k] ?? "").length)) + 2,
-  }));
+function formatMouvements(mouvements) {
+  return [...mouvements]
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+    .map((m) => ({
+      "Date": m.date || "",
+      "Magasin": m.magasinNom || "",
+      "Type": TYPE_LABELS[m.type] || m.type || "",
+      "Référence": m.reference || "",
+      "Produit": m.produit || "",
+      "Quantité": n(m.quantite),
+      "Montant": m.type === "vente" ? n(m.montant) : "",
+      "Note": m.note || "",
+    }));
 }
 
 function addSheet(wb, rows, name) {
   const ws = XLSX.utils.json_to_sheet(rows);
-  autoWidth(ws, rows);
+  if (rows.length) {
+    const keys = Object.keys(rows[0]);
+    ws["!cols"] = keys.map((k) => ({ wch: Math.min(50, Math.max(k.length, ...rows.map((r) => String(r[k] ?? "").length)) + 2) }));
+  }
   XLSX.utils.book_append_sheet(wb, ws, name);
 }
 
 export async function exportToExcel() {
   await ensureAuth();
-  const [produitsRaw, achatsRaw, ventesRaw, commandesRaw, magasinsRaw, stocksRaw] = await Promise.all([
-    fetchAll("produits"),
-    fetchAll("achats"),
-    fetchAll("ventes"),
-    fetchAll("commandes"),
-    fetchAll("magasins"),
-    fetchAll("stocksMagasins"),
+  const [produits, achats, ventes, commandes, magasins, mouvements] = await Promise.all([
+    fetchAll("produits"), fetchAll("achats"), fetchAll("ventes"),
+    fetchAll("commandes"), fetchAll("magasins"), fetchAll("mouvements"),
   ]);
 
-  // fetchAll ne renvoie pas les IDs des documents (nécessaires pour relier magasins <-> stocksMagasins)
-  const magasinsSnap = await getDocs(collection(db, "magasins"));
-  const magasins = magasinsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
   const wb = XLSX.utils.book_new();
-  addSheet(wb, formatProduits(produitsRaw), "Produits");
-  addSheet(wb, formatAchats(achatsRaw), "Achats");
-  addSheet(wb, formatVentes(ventesRaw), "Ventes");
-  addSheet(wb, formatCommandes(commandesRaw), "Commandes");
-  addSheet(wb, formatMagasins(magasins, stocksRaw), "Magasins");
+  addSheet(wb, formatProduits(produits, mouvements), "Produits");
+  addSheet(wb, formatAchats(achats), "Achats");
+  addSheet(wb, formatVentes(ventes, mouvements, magasins), "Ventes");
+  addSheet(wb, formatCommandes(commandes), "Commandes");
+  addSheet(wb, formatStockMagasins(magasins, mouvements), "Stock magasins");
+  addSheet(wb, formatMouvements(mouvements), "Mouvements magasins");
 
-  const date = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `gestion-stocks_${date}.xlsx`);
+  XLSX.writeFile(wb, `gestion-stocks_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
