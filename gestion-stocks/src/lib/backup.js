@@ -1,10 +1,9 @@
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
 import { db, ensureAuth } from "../firebase";
 
-const BACKUP_COLLECTIONS = ["produits", "achats", "ventes", "commandes"];
+const BACKUP_COLLECTIONS = ["produits", "achats", "ventes", "commandes", "magasins", "stocksMagasins", "mouvements"];
 
 // Télécharge un fichier JSON contenant toutes les données de l'appli.
-// Ce fichier peut être réimporté plus tard avec restoreBackupJSON().
 export async function exportBackupJSON() {
   await ensureAuth();
 
@@ -25,26 +24,19 @@ export async function exportBackupJSON() {
 }
 
 // Réimporte un fichier de sauvegarde généré par exportBackupJSON().
-// Les documents sont réécrits avec leur identifiant d'origine (recréés à l'identique).
 export async function restoreBackupJSON(file) {
   await ensureAuth();
 
-  const text = await file.text();
-  const backup = JSON.parse(text);
-
-  if (!backup.collections) {
-    throw new Error("Fichier de sauvegarde invalide");
-  }
+  const backup = JSON.parse(await file.text());
+  if (!backup.collections) throw new Error("Fichier de sauvegarde invalide");
 
   for (const name of Object.keys(backup.collections)) {
     if (!BACKUP_COLLECTIONS.includes(name)) continue;
     const docsToRestore = backup.collections[name];
 
-    // Firestore limite un batch à 500 opérations : on découpe par lots de 450
     for (let i = 0; i < docsToRestore.length; i += 450) {
-      const chunk = docsToRestore.slice(i, i + 450);
       const batch = writeBatch(db);
-      chunk.forEach((item) => {
+      docsToRestore.slice(i, i + 450).forEach((item) => {
         const { id, ...data } = item;
         batch.set(doc(db, name, id), data);
       });
@@ -54,8 +46,6 @@ export async function restoreBackupJSON(file) {
 
   return {
     createdAt: backup.createdAt,
-    counts: Object.fromEntries(
-      Object.entries(backup.collections).map(([k, v]) => [k, v.length])
-    ),
+    counts: Object.fromEntries(Object.entries(backup.collections).map(([k, v]) => [k, v.length])),
   };
 }
