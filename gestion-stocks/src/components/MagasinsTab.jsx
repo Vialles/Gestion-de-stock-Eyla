@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Store, Plus, Trash2, ChevronDown, ChevronUp, PackagePlus, ReceiptText, Undo2, Download, X, Check, Loader2 } from "lucide-react";
+import { Store, Plus, Trash2, ChevronDown, ChevronUp, PackagePlus, ReceiptText, Undo2, Download, FileText, X, Check, Loader2 } from "lucide-react";
 import { useCollection } from "../lib/useCollection";
 import { stockMagasin, totauxParReference, stockAtelier, releveMagasin, TYPE_LABELS } from "../lib/stock";
 import { exportReleveExcel } from "../lib/exportReleve";
+import { exportDepotWord } from "../lib/exportDepot";
 
 const inputCls = "rounded-md border border-[#e8d9d1] px-3 py-2 text-sm";
 const EMPTY_MAGASIN = { nom: "", adresse: "", telephone: "", contact: "", commission: "0" };
@@ -129,6 +130,7 @@ function MagasinCard({ magasin, open, onToggle, onRemove, onUpdate, mouvements, 
   const [debut, setDebut] = useState(monthStart());
   const [fin, setFin] = useState(today());
   const [commission, setCommission] = useState(String(magasin.commission ?? 0));
+  const [exportingWord, setExportingWord] = useState(false);
 
   const mesMouvements = useMemo(
     () => mouvements.filter((m) => m.magasinId === magasin.id),
@@ -141,6 +143,19 @@ function MagasinCard({ magasin, open, onToggle, onRemove, onUpdate, mouvements, 
   const totalArticles = stock.reduce((s, l) => s + l.quantite, 0);
   const releve = useMemo(() => releveMagasin(mouvements, magasin, debut, fin), [mouvements, magasin, debut, fin]);
   const stockParRef = useMemo(() => stockMagasin(mouvements, magasin.id), [mouvements, magasin.id]);
+
+  async function handleDepotWord() {
+    setExportingWord(true);
+    try {
+      const count = await exportDepotWord(mouvements, magasin, produits, debut, fin);
+      if (count === 0) alert("Aucun dépôt dans ce magasin sur la période choisie : modifie les dates « Du / Au » puis réessaie.");
+    } catch (err) {
+      console.error(err);
+      alert("Échec de la création du relevé de dépôt, réessaie dans un instant.");
+    } finally {
+      setExportingWord(false);
+    }
+  }
 
   const btn = "rounded-md px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 transition";
 
@@ -206,14 +221,17 @@ function MagasinCard({ magasin, open, onToggle, onRemove, onUpdate, mouvements, 
           </section>
 
           <section>
-            <h4 className="text-sm font-semibold mb-2 text-[#3a2318]">Relevé de ventes</h4>
+            <h4 className="text-sm font-semibold mb-2 text-[#3a2318]">Relevés sur une période</h4>
             <div className="flex flex-wrap items-end gap-3 mb-3">
               <label className="flex flex-col gap-1 text-xs text-[#3a2318]"><span className="font-medium opacity-70">Du</span>
                 <input type="date" value={debut} onChange={(e) => setDebut(e.target.value)} className="rounded-md border border-[#e8d9d1] px-2 py-1.5 text-sm" /></label>
               <label className="flex flex-col gap-1 text-xs text-[#3a2318]"><span className="font-medium opacity-70">Au</span>
                 <input type="date" value={fin} onChange={(e) => setFin(e.target.value)} className="rounded-md border border-[#e8d9d1] px-2 py-1.5 text-sm" /></label>
               <button onClick={() => exportReleveExcel(mouvements, magasin, debut, fin)} className={`${btn} border border-rouille text-rouille hover:bg-rouille hover:text-white`}>
-                <Download size={14} /> Exporter le relevé (Excel)
+                <Download size={14} /> Relevé de ventes (Excel)
+              </button>
+              <button onClick={handleDepotWord} disabled={exportingWord} className={`${btn} border border-rouille text-rouille hover:bg-rouille hover:text-white disabled:opacity-50`}>
+                {exportingWord ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Relevé de dépôt (Word)
               </button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -238,7 +256,7 @@ function MagasinCard({ magasin, open, onToggle, onRemove, onUpdate, mouvements, 
             ) : (
               <div className="overflow-x-auto rounded-lg border border-[#f2e6df] max-h-72 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0"><tr className="bg-peche/40">
+                  <thead className="sticky top-0"><tr className="bg-[#f3d8cf]">
                     {["Date", "Type", "Référence", "Produit", "Qté", "Montant"].map((h) => <th key={h} className="text-left px-3 py-2 font-medium text-[#8a3d0c] whitespace-nowrap">{h}</th>)}
                     <th className="w-8"></th>
                   </tr></thead>
