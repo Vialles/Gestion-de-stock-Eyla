@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Package, Plus, Trash2, Pencil, X, Check, Hammer } from "lucide-react";
 import { useCollection } from "../lib/useCollection";
 import { totauxParReference, stockAtelier, aFabriquer } from "../lib/stock";
+import ScrollTable from "./ScrollTable";
 
 function currency(n) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n || 0);
@@ -131,14 +132,14 @@ export default function ProduitsTab() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-[#eee0d8]">
+      <ScrollTable>
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-peche/40">
+            <tr>
+              <th className="sticky left-0 z-[1] w-20 bg-[#f3d8cf]"></th>
               {HEADERS.map((h) => (
-                <th key={h} className="text-left px-4 py-3 font-medium whitespace-nowrap text-[#8a3d0c]">{h}</th>
+                <th key={h} className="text-left px-4 py-3 font-medium whitespace-nowrap text-[#8a3d0c] bg-[#f3d8cf]">{h}</th>
               ))}
-              <th className="w-16"></th>
             </tr>
           </thead>
           <tbody>
@@ -147,8 +148,30 @@ export default function ProduitsTab() {
             )}
             {rows.map((r, i) => {
               const isEditing = editingId === r.id;
+              const rowBg = i % 2 ? "bg-[#fffdfb]" : "bg-white";
               return (
-                <tr key={r.id} className={`border-t border-[#f2e6df] ${i % 2 ? "bg-[#fffdfb]" : "bg-white"}`}>
+                <tr key={r.id} className={`border-t border-[#f2e6df] ${rowBg}`}>
+                  <td className={`sticky left-0 z-[1] px-2 text-center whitespace-nowrap ${rowBg}`}>
+                    {isEditing ? (
+                      <div className="flex items-center gap-1 justify-center">
+                        <button onClick={() => saveEdit(r.id)} title="Enregistrer" className="p-1 opacity-70 hover:opacity-100"><Check size={15} color="#2f7a3d" /></button>
+                        <button onClick={() => setEditingId(null)} title="Annuler" className="p-1 opacity-70 hover:opacity-100"><X size={15} color="#a83b0b" /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 justify-center">
+                        <button
+                          onClick={() => { setEditingId(r.id); setEditForm(Object.fromEntries(Object.keys(EMPTY_FORM).map((k) => [k, r[k] ?? EMPTY_FORM[k]]))); }}
+                          title="Modifier"
+                          className="opacity-40 hover:opacity-100 transition p-1"
+                        >
+                          <Pencil size={14} color="#a83b0b" />
+                        </button>
+                        <button onClick={() => remove(r.id)} title="Supprimer" className="opacity-40 hover:opacity-100 transition p-1">
+                          <Trash2 size={15} color="#a83b0b" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   {FIELDS.map(([key, , type]) => (
                     <td key={key} className="px-4 py-2 text-[#3a2318]">
                       {isEditing ? (
@@ -156,7 +179,7 @@ export default function ProduitsTab() {
                           type={type}
                           value={editForm[key]}
                           onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                          className="w-full rounded border border-[#e8d9d1] px-2 py-1 text-sm"
+                          className="w-full min-w-[90px] rounded border border-[#e8d9d1] px-2 py-1 text-sm"
                         />
                       ) : key === "coutMatiere" || key === "prixVente" ? currency(r[key]) : r[key]}
                     </td>
@@ -176,29 +199,12 @@ export default function ProduitsTab() {
                       <span className="opacity-30">—</span>
                     )}
                   </td>
-                  <td className="px-2 text-center whitespace-nowrap">
-                    {isEditing ? (
-                      <div className="flex items-center gap-1 justify-center">
-                        <button onClick={() => saveEdit(r.id)} className="p-1 opacity-70 hover:opacity-100"><Check size={15} color="#2f7a3d" /></button>
-                        <button onClick={() => setEditingId(null)} className="p-1 opacity-70 hover:opacity-100"><X size={15} color="#a83b0b" /></button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 justify-center">
-                        <button onClick={() => { setEditingId(r.id); setEditForm(Object.fromEntries(Object.keys(EMPTY_FORM).map((k) => [k, r[k] ?? EMPTY_FORM[k]]))); }} className="opacity-30 hover:opacity-100 transition p-1">
-                          <Pencil size={14} color="#a83b0b" />
-                        </button>
-                        <button onClick={() => remove(r.id)} className="opacity-30 hover:opacity-100 transition p-1">
-                          <Trash2 size={15} color="#a83b0b" />
-                        </button>
-                      </div>
-                    )}
-                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollTable>
     </div>
   );
 }
