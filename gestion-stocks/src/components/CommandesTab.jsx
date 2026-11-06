@@ -3,11 +3,12 @@ import { ClipboardList, Plus, Trash2, Pencil, CalendarClock, LayoutGrid, GanttCh
 import { useCollection } from "../lib/useCollection";
 import { syncCommandeToGoogleCalendar, isGoogleCalendarConfigured } from "../lib/googleCalendar";
 
-const STATUTS = ["À faire", "En cours", "Terminé", "À livrer"];
+const STATUTS = ["À faire", "En cours", "À valider", "Terminé", "À livrer"];
 
 const STATUT_COLORS = {
   "À faire": { bg: "#f4e2da", text: "#a83b0b", bar: "#e19e88" },
   "En cours": { bg: "#fde7c8", text: "#b8730a", bar: "#e2a63d" },
+  "À valider": { bg: "#efe6f7", text: "#6b3fa0", bar: "#9b6fd1" },
   "Terminé": { bg: "#e9f5ea", text: "#2f7a3d", bar: "#5aab68" },
   "À livrer": { bg: "#e3ecfb", text: "#2952a3", bar: "#5b83d1" },
 };
@@ -201,7 +202,7 @@ function ClientInfo({ c }) {
 
 function KanbanBoard({ commandes, onStatutChange, onSync, onRemove, onEdit, syncingId }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       {STATUTS.map((statut) => {
         const items = commandes.filter((c) => c.statut === statut);
         const colors = STATUT_COLORS[statut];
@@ -236,14 +237,14 @@ function KanbanBoard({ commandes, onStatutChange, onSync, onRemove, onEdit, sync
                     <select
                       value={c.statut}
                       onChange={(e) => onStatutChange(c, e.target.value)}
-                      className="flex-1 text-xs rounded border border-[#e8d9d1] px-1.5 py-1"
+                      className="flex-1 text-xs rounded border border-[#e8d9d1] px-1.5 py-1 min-w-0"
                     >
                       {STATUTS.map((s) => <option key={s}>{s}</option>)}
                     </select>
                     <button
                       onClick={() => onSync(c)}
                       title="Synchroniser avec Google Agenda"
-                      className="p-1.5 rounded border border-[#e8d9d1] hover:bg-[#f4e2da] transition"
+                      className="p-1.5 rounded border border-[#e8d9d1] hover:bg-[#f4e2da] transition shrink-0"
                     >
                       {syncingId === c.id ? (
                         <Loader2 size={13} className="animate-spin" color="#a83b0b" />
@@ -360,7 +361,7 @@ function GanttView({ commandes }) {
             );
           })}
         </div>
-        <div className="flex gap-4 mt-4 pt-3 border-t border-[#f2e6df]">
+        <div className="flex flex-wrap gap-4 mt-4 pt-3 border-t border-[#f2e6df]">
           {STATUTS.map((s) => (
             <div key={s} className="flex items-center gap-1.5 text-xs text-[#3a2318]">
               <span className="w-2.5 h-2.5 rounded-sm" style={{ background: STATUT_COLORS[s].bar }} />
